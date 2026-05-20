@@ -1,187 +1,209 @@
 # NV
-一个在本地\服务器部署模型的脚本集
 
----
+基于 Ultralytics YOLO / PyTorch 的计算机视觉模型训练与部署脚本集，面向无人机目标检测竞赛（Elite Race）。
+
 ## 硬件配置
 
-### 本地配置
-CPU - Intel Core I7-14700HX 28Cores
+### 本地 (移动端)
+| 组件 | 型号 |
+|------|------|
+| CPU | Intel Core i7-14700HX (28C) |
+| GPU | NVIDIA GeForce RTX 4060 Laptop 8GB (55W) |
+| RAM | DDR5-5200 64GB |
+| OS | Ubuntu 20.04.6 |
 
-GPU - NVIDIA GeForce RTX 4060 Laptop GPU 8GB
+### 服务器
+| 组件 | 型号 |
+|------|------|
+| CPU | AMD Ryzen 9 9800X / Intel Core i7-13700K |
+| GPU | NVIDIA GeForce RTX 4090 D 24GB / RTX 4090 24GB |
+| RAM | DDR5-5200 64GB / 128GB |
+| OS | Ubuntu 20.04.6 |
 
-RAM - DDR5-5200 64GB
+## 环境
 
-SYS - Ubuntu 20.04.6
+Conda 环境配置参见 `env_NV.txt`。核心依赖：
 
-### 服务器配置
-CPU - AMD RYZEN 9 9800X / Intel Core I7-13700K
+- Python 3.8.20
+- PyTorch 2.1.0+cu121
+- Ultralytics 8.3.170
+- OpenCV, Albumentations, NumPy, Pandas, Matplotlib
 
-GPU - NVIDIA GeForce RTX 4090 D 24GB / NVIDIA GeForce RTX 4090 24GB
+```bash
+conda create -n gjs -f env_NV.txt
+conda activate gjs
+```
 
-RAM - DDR5-5200 64GB / DDR5-5200 128GB
+## 项目结构
 
-SYS - Ubuntu 20.04.6 
+```
+NV/
+├── Ultimate_Ready.py      # 主训练入口 (YOLOv12n)
+├── Ultimate7.py           # 数据增强脚本
+├── Ultimate8.py           # 数据增强脚本 (并行版本)
+├── Ultimate.py            # YOLOv11s 训练 (霍夫圆靶心检测)
+├── Ultimate2.py           # Ultimate 代码草稿 / 测试 (已注释)
+├── Ultimate3.py           # 扩散模型实验 - MNIST (已注释)
+├── Ultimate4.py           # (空文件)
+├── Ultimate5.py           # YOLOv11s 训练变体 (英文注释版)
+├── attempt.py             # 数据验证与增强训练 (100 epochs / 100 小时)
+├── hubei.py               # ResNet 分类训练 (湖北数据集, 背景替换增强)
+├── preloading_pics.py     # 环境光照特征提取与迁移 (DeepSeek R1)
+├── preloading_pics2.py    # 环境光照 VGG19 特征迁移 (WenXin X1 Turbo)
+├── preloading_bkgrd.py    # 背景图片批量缩放
+├── output.py              # 简单图像增强 (旋转/翻转/亮度)
+├── yolov3test.py          # YOLOv5 检测测试
+├── haarcascadetest.py     # Haar Cascade 人脸检测
+├── hogsvm_test.py         # HOG+SVM 检测测试
+├── pytorchtest.py         # YOLOv8 摄像头实时检测
+├── verify.py              # ResNet18 验证脚本
+├── verify2_final.py       # ResNet18 验证 (32 类)
+├── verify4.py             # 高速验证器 (ResNet152, 已注释)
+├── verify5.py             # XML/PASCAL VOC 标注校验
+├── verify6.py             # YOLO 模型验证 (含 mAP 计算)
+├── verify7.py             # YOLOv8 摄像头实时检测与结果保存
+├── verify_test.py         # 验证测试
+├── verify_test3.py        # 验证测试 3
+├── test.py               # CIFAR-10 自定义 CNN 训练
+├── test2.py               # ResNet152/EfficientNet 训练 (已注释)
+├── test3.py               # ResNet152/EfficientNet 优化版
+├── test4.py               # YOLOv8x 激进训练 + PASCAL VOC 标注
+├── test5.py               # YOLOv8x 激进训练 (修正环境图片输入)
+├── test6.py               # ResNet152 国赛初赛实验
+├── test7.py               # 修复数据增强不足 (800-1000 张/类)
+├── test8.py               # 修复 epochs 不连续训练
+├── test8_blockII.py       # 修复检索异常 + 增强数据扩充
+├── test9.py               # 修复参数错误 (yolov8x.pt 未正确加载)
+├── test10.py              # 降低显存占用 (减小 batch_size)
+├── test11.py              # 强化数据扩充 + 修复 bug
+├── test12.py              # 测试脚本
+├── dataset.yaml           # YOLO 数据集配置 (2 类: H, target)
+├── demo                   # 路径配置模板
+├── weights/               # 模型权重目录
+├── yolo11n.pt             # YOLOv11n 预训练权重
+├── yolo11s.pt             # YOLOv11s 预训练权重
+├── env_NV.txt             # Conda 环境配置
+└── LICENSE                # MIT License
+```
 
-## 脚本解析
+## 脚本演进
 
-这些.py文件设计都是为了模型训练。
+### test 系列 — 训练管线迭代
 
-### test系列模型
->test1.py
-cifar100验证模型，目的是验证移动端RTX 4060 8GB 55W在linux系统是否可以进行训练。
->test2.py
-resnet152 / efficientnet_b7训练脚本，不适用于移动端RTX 4060。
->test3.py
-resnet152 / efficientnet_b7训练脚本，在优化后理论上适用于移动端RTX 4060，但是实际验证中无法实现。本脚本对于GPU核心、显存、散热、性能释放四方面要求极高，极有可能遇到稳定性问题。
->test4.py
-yolov8x的最激进调教训练脚本，仅适用于RTX 4090/RTX 4090D，自动生成覆盖整张图像的边界框标注，标签名与文件夹名称一致，生成PASCAL VOC格式的XML文件，每张原始图像生成100张增强图像，保持正确的边界框标注，包含几何变换、颜色变换、天气效果等，使用最激进的YOLOv8x模型，启用所有增强选项，12小时满负荷训练。但是值得注意的是，这只是半成品代码，实际的结果应该是在环境图片中进行打标，所以对于test4.py来说，前部打标是错误的。
->test5.py
-yolov8x最激进调教训练脚本，核心与test4几乎相同，但是修正了环境图片的输入。应当可用。pip install torch torchvision albumentations ultralytics opencv-python tqdm scikit-learn imutils
-### test6.py 
-测试开学后国赛初赛的实验模型，暂定使用 RTX 4060 M 55W进行训练，暂定采用Resnet152模型。设计显存、核心最大化利用，为保证精度暂时决定进行长时间训练以弥补4060算力不足的问题；正在寻找更优秀的高效算法。   后期发现数据集扩充不足。
-### test7.py
-修复了test6数据集扩充不足的问题，每个类别可以做到800~1000张图片；已经连续测试训练26小时，可以稳定运行，GPU核心和显存占用稳定在98%以上。  后期发现代码问题epoches不连续训练导致权重无效或低效。（我踏马真是个人物我草）
-### test8.py
-修复了test7关于epoches不连续训练的问题；增强了数据集扩充能力；修复了一些已知问题。    后期发现在epoch4训练开始前出现检索异常导致训练意外终止。
-### test8_blockII.py
-修复了test8关于检索异常的问题；再次提高了数据扩充能力；修复了已知问题。第一版在运行过程中速度较慢；第二版可以进行训练任务。     后期发现第二版训练完全失败，从Epoch 2的验证结果来看，模型训练出现了灾难性失败，所有核心指标均表明模型未学习到任何有效特征。
-### test9.py
-修复了test8 block II的问题（参数错误 导致未正确加载yolov8x.pt文件 进而导致模型几乎从头训练）。    运行时发现出现了比test8 block II更严重的问题，全部训练失效，生成扩充数据集出现严重问题。
-### test10.py
-修复了部分已知问题，降低了对于显存的占用（降低batch_size及其他有效措施），但是对于数据集扩充的可靠性存疑。
-### test11.py
-修复了部分已知问题，强化了数据集扩充部分并修复了bug。   运行时发现数据集扩充约有40%错误，并且epoch6之后loss全为0，标志着训练过程的灾难性失败。
-### attempt.py
-从全新思路进行数据验证扩充；真正意义上实现了每个epoch之间的链接训练。 设置100epoches或100小时不中断训练，在第36小时数据收敛使得训练终止，得到权重文件。
+| 脚本 | 目的 | 结果 |
+|------|------|------|
+| `test.py` | CIFAR-10 自定义 CNN, 验证 RTX 4060 移动端可行性 | 可用 |
+| `test2.py` | ResNet152 / EfficientNet_b7 训练 | 不适用于 RTX 4060 |
+| `test3.py` | ResNet152 优化版, 理论兼容 4060 | 稳定性问题, 未通过 |
+| `test4.py` | YOLOv8x 最激进配置, PASCAL VOC 自动标注 | 前部打标逻辑错误 (半成品) |
+| `test5.py` | 修正 test4 的环境图片输入 | 应当可用 |
+| `test6.py` | ResNet152 国赛初赛实验 | 数据集扩充不足 |
+| `test7.py` | 修复扩充不足 (800-1000 张/类), 26h 稳定运行 | epochs 不连续, 权重无效 |
+| `test8.py` | 修复 epochs 问题, 增强扩充 | epoch4 检索异常导致终止 |
+| `test8_blockII.py` | 修复检索异常 | 训练灾难性失败 (epoch2 起) |
+| `test9.py` | 修复 yolov8x.pt 加载错误 | 完全失效 |
+| `test10.py` | 降低显存占用 | 扩充可靠性存疑 |
+| `test11.py` | 强化扩充 + bug 修复 | ~40% 扩充错误, epoch6 后 loss=0 |
+| `attempt.py` | 全新思路, epoch 间链接训练, 100h 不中断 | 36h 收敛, F1≈0.4976 |
 
-最终权重在极端状态的验证数据处理：
+### Ultimate 系列 — 成熟训练管线
 
-总样本数	66,800
+| 脚本 | 说明 |
+|------|------|
+| `Ultimate.py` | 霍夫圆靶心检测 + YOLOv11s, 26h 收敛, 精确率 1.0 但过拟合 |
+| `Ultimate2.py` | 测试草稿 / Demo |
+| `Ultimate3.py` | 扩散模型 (DDPM) MNIST 实验 |
+| `Ultimate5.py` | Ultimate.py 的英文版变体 |
+| `Ultimate7.py` | 数据增强: 加载原始图片+标签, 旋转/缩放/融合背景 |
+| `Ultimate8.py` | 数据增强并行版, 与 Ultimate7 配合使用 |
+| `Ultimate_Ready.py` | **主训练循环** — YOLOv12n, 300 epochs, batch=108 |
 
-平均F1分数	0.4976
+### 辅助脚本
 
-平均精确率	0.4976
+| 脚本 | 功能 |
+|------|------|
+| `hubei.py` | ResNet 分类 (16 类), 背景去除+替换+Albumentations 增强, 96h 训练 |
+| `output.py` | 图片增强至目标数量 (旋转/翻转/亮度) |
+| `preloading_pics.py` | 环境光照特征提取与迁移 |
+| `preloading_pics2.py` | VGG19 环境光照迁移 |
+| `preloading_bkgrd.py` | 背景图片统一缩放至 640x640 |
 
-平均召回率	0.4976
+### 验证脚本
 
-F1分数标准差	0.0574
+| 脚本 | 模型 | 功能 |
+|------|------|------|
+| `verify.py` | ResNet18 | 单图分类验证 (16 类), 1h 持续扫描 |
+| `verify2_final.py` | ResNet18 | 单图分类验证 (32 类) |
+| `verify4.py` | ResNet152 | 高速验证器 (已注释) |
+| `verify5.py` | — | XML/PASCAL VOC 标注合法性校验 |
+| `verify6.py` | YOLO | 含 Ground Truth 的 mAP 计算验证 |
+| `verify7.py` | YOLOv8 | 摄像头实时检测 + 帧保存 |
+| `verify_test.py` / `verify_test3.py` | — | 验证测试辅助 |
 
-精确率标准差	0.0574
+### 探索性测试
 
-召回率标准差	0.0574
+| 脚本 | 内容 |
+|------|------|
+| `pytorchtest.py` | YOLOv8 摄像头实时检测 |
+| `yolov3test.py` | YOLOv5 批量图片检测 (8 FPS 限制) |
+| `haarcascadetest.py` | Haar Cascade 人脸检测 (10 核并行) |
+| `hogsvm_test.py` | HOG+SVM 检测 (10 核并行) |
+| `test12.py` | 测试脚本 |
 
-建议
+## 最终训练结果 (Elite Race)
 
-数据增强：考虑增加更多样化的训练数据，特别是针对低性能场景
+**模型**: YOLOv12n | **算力**: RTX 4090 D 24GB | **训练时长**: 9.994h (242 epochs 收敛)
 
-超参数调优：进一步优化模型超参数，可能提高整体性能
-
-后处理优化：改进非极大值抑制(NMS)参数，可能提高精确率
-
-模型集成：考虑使用模型集成技术，结合多个模型的预测结果
-
-错误分析：对低性能样本进行详细分析，找出常见错误模式
-
-### Ultimate.py
-终极版本；修复了attempt2代码中命名错误的问题；设置100epoches，考虑到资源有限，模型修改为yolov11s。      
-
-1.预热GPU；输出硬件信息
-
-2.加载63张背景图片
-
-3.使用霍夫圆算法对63张背景图片进行检测，每张图片检测10次，取置信度最高的圆轮廓的圆心作为靶心
-
-4.取raw_dataset下的32个类别图片，进行Alpha融合、颜色迁移HSV、多角度二维旋转、有限角度三维翻转投影、Albumentations增强等，生成图片按分类保存至/home/legion/dataset/augmented_dataset，每个类别不少于900张扩充图片
-
-5.将生成的aug图片取其几何中心，随机融合在63张背景图片上，要求几何中心和靶心完全对准
-
-6.自动将融合在背景上的aug图片打标，标签名称与类别名称相同
-
-7.预加载yolov11s模型
-
-8.开始训练，使用TensorFlow加速、超参数调优、后处理优化以改进非极大值抑制(NMS)参数、模型集成技术，结合多个模型的预测结果、对低性能样本进行详细分析
-
-训练在第26小时收敛。
-
-最终权重在极端状态的验证数据处理：
-
-总样本数	28800
-
-平均F1分数	（未记录）
-
-平均精确率	1.0000
-
-平均召回率	1.0000
-
-F1分数标准差	0
-
-精确率标准差	0
-
-召回率标准差	0
-
-#### 2025.9.27进行验证，出现严重过拟合问题，尝试进行优化：噪声、无目标图像、空目录。
-
-### Ultimate2.py
-一个测试脚本与草稿本，是ultimate代码的demo
-
-### Ultimate3.py
-
-### Ultimate4.py
-
-### Ultimate5.py
-
-### Ultimate_Ready.py    Ultimate7/8.py
-在此工程目录中，Ultimate7/8用来进行数据增强；Ultimate_Ready作为主训练循环，在airhust2服务器可以开启训练，是一个较为完备的模型训练循环。
-
-使用方法： /  conda activate gjs  /  python3 Ultimate8.py   /*等待数据处理结束*/    python3 Ultimate_ready.py    即可开启训练。
-
-对于elite_race的模型准备，创建工程workspace后，第一级根目录下包含：
-
-Ultimate_Ready.py Ultimate8.py Ultimate7.py runs/ dataset/ input_data/
-
-input_data下包含：各级目标的标签名，以及对应内存的图片；空背景；在labelImg进行的yolo格式标签label()
-
-runs下包含：detect
-
-dataset下包含：dataset.yaml   images/   labels/  其中两文件夹内不需要手动操作，会有脚本生成的数据集；dataset.yaml可参见本仓库根目录下的dataset.yaml.
-
---------------------------------------------------------------------------------------------
-
-对于本次elite_race的模型准备，采用了yolov12n,算力平台为NV RTX 4090D 24GB,训练在第242个epoch(9.994H)收敛终止.
-
+```
 Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+242/300   21.6G     0.1061     0.09759     0.8029      4        640
 
-242/300   21.6G     0.1061     0.09759     0.8029      4        640: 100%|██████████| 401/401
-
-Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 50/50 
-
+Class     Images  Instances      Box(P)          R      mAP50  mAP50-95)
 all       10799      12152      0.969        0.968     0.98      0.978
+```
 
----------------------------------------------------------------------------------------------
+最终权重验证结果:
 
-Ultralytics 8.3.170  Python-3.8.20 torch-2.1.0+cu121 CUDA:0 (NVIDIA GeForce RTX 4090 D, 24210MiB)
+```
+Class     Images  Instances      Box(P)          R      mAP50  mAP50-95)
+all       10799      12152       0.98      0.965      0.983      0.981
+H          5616       5942      0.978      0.966      0.983      0.981
+target     5847       6210      0.983      0.965      0.983      0.981
+```
 
-YOLOv12n summary (fused): 159 layers, 2,557,118 parameters, 0 gradients, 6.3 GFLOPs
+实机飞行测试: 20fps 抖动下识别率 96%, 波动仅 2%.
 
-                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 50/50
+## 使用方法
 
-                   all      10799      12152       0.98      0.965      0.983      0.981
+### 数据准备
 
-                     H       5616       5942      0.978      0.966      0.983      0.981
+```
+input_data/
+├── background/          # 无人机航拍空场景图片 (10+ 张)
+├── label/               # YOLO 格式标签 (LabelImg 标注)
+│   └── classes.txt      # 类别名称列表
+└── <类别文件夹>/         # 各类别目标图片 (透明 PNG 最佳)
+```
 
-                target       5847       6210      0.983      0.965      0.983      0.981
+### 训练流程
 
-Speed: 0.1ms preprocess, 0.4ms inference, 0.0ms loss, 1.1ms postprocess per image
+```bash
+conda activate gjs
 
-----------------------------------------------------------------------------------------------
+# 1. 数据增强
+python3 Ultimate8.py
 
-在实机飞行过程中，摄像头拍摄画面在20fps抖动时，识别率高达96%，波动仅有2%，训练效果极为出众.
+# 2. 开始训练
+python3 Ultimate_Ready.py
+```
 
-#### 对于Ultimate_Ready之前的脚本，您需要做的准备：
-##### 在background_scene/目录中放置10+张无人机拍摄的场景图片，不需要任何标注，只需原始拍摄图片；
-##### 在raw_dataset/目录中准备目标物体图片，按类别分文件夹存放，使用透明背景的PNG格式最佳，如果只有JPG，脚本会自动添加透明背景
-##### 示例场景图片要求：固定点位拍摄（同一位置不同时间），包含典型背景变化（光照、天气等），包含目标可能出现区域的空场景，不需要包含实际目标物体
-##### 剩下的数据config路径啥的自己看着改吧
+### 验证
 
-## 对于verify脚本
-这些verify脚本都是用来进行识别验证的，通过不断扫描数据集内部的照片集进行扫描识别，计算成功率，初步判断可用的模型识别成功率在95%以上，在实际应用中若要追求速度则应该逼近99%~100%。
+```bash
+python3 verify6.py    # 含 mAP 的完整验证
+python3 verify7.py    # 摄像头实时检测
+```
+
+## License
+
+MIT License — Copyright (c) 2025 Escherichia
