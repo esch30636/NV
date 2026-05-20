@@ -1,6 +1,10 @@
 # NV
-一个在本地部署模型的脚本集
+一个在本地\服务器部署模型的脚本集
 
+---
+## 硬件配置
+
+### 本地配置
 CPU - Intel Core I7-14700HX 28Cores
 
 GPU - NVIDIA GeForce RTX 4060 Laptop GPU 8GB
@@ -8,17 +12,30 @@ GPU - NVIDIA GeForce RTX 4060 Laptop GPU 8GB
 RAM - DDR5-5200 64GB
 
 SYS - Ubuntu 20.04.6
-## 对于test脚本：
+
+### 服务器配置
+CPU - AMD RYZEN 9 9800X / Intel Core I7-13700K
+
+GPU - NVIDIA GeForce RTX 4090 D 24GB / NVIDIA GeForce RTX 4090 24GB
+
+RAM - DDR5-5200 64GB / DDR5-5200 128GB
+
+SYS - Ubuntu 20.04.6 
+
+## 脚本解析
+
 这些.py文件设计都是为了模型训练。
-### test.py
+
+### test系列模型
+>test1.py
 cifar100验证模型，目的是验证移动端RTX 4060 8GB 55W在linux系统是否可以进行训练。
-### test2.py
+>test2.py
 resnet152 / efficientnet_b7训练脚本，不适用于移动端RTX 4060。
-### test3.py
+>test3.py
 resnet152 / efficientnet_b7训练脚本，在优化后理论上适用于移动端RTX 4060，但是实际验证中无法实现。本脚本对于GPU核心、显存、散热、性能释放四方面要求极高，极有可能遇到稳定性问题。
-### test4.py
+>test4.py
 yolov8x的最激进调教训练脚本，仅适用于RTX 4090/RTX 4090D，自动生成覆盖整张图像的边界框标注，标签名与文件夹名称一致，生成PASCAL VOC格式的XML文件，每张原始图像生成100张增强图像，保持正确的边界框标注，包含几何变换、颜色变换、天气效果等，使用最激进的YOLOv8x模型，启用所有增强选项，12小时满负荷训练。但是值得注意的是，这只是半成品代码，实际的结果应该是在环境图片中进行打标，所以对于test4.py来说，前部打标是错误的。
-### test5.py
+>test5.py
 yolov8x最激进调教训练脚本，核心与test4几乎相同，但是修正了环境图片的输入。应当可用。pip install torch torchvision albumentations ultralytics opencv-python tqdm scikit-learn imutils
 ### test6.py 
 测试开学后国赛初赛的实验模型，暂定使用 RTX 4060 M 55W进行训练，暂定采用Resnet152模型。设计显存、核心最大化利用，为保证精度暂时决定进行长时间训练以弥补4060算力不足的问题；正在寻找更优秀的高效算法。   后期发现数据集扩充不足。
