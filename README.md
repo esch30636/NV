@@ -277,7 +277,7 @@ B          5445       5802          1          1      0.995      0.995
 ### 训练启动
 
 ```bash
-conda activate gjs
+conda activate <env_name>
 
 # 1. 准备数据: 将目标和背景图片放入 workspace/input_data/
 # 2. 编辑 input_data/label/classes.txt 定义类别
@@ -305,7 +305,7 @@ input_data/
 ### 训练流程
 
 ```bash
-conda activate gjs
+conda activate <env_name>
 
 # 1. 数据增强
 python3 Ultimate8.py

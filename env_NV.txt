@@ -69,4 +69,4 @@ dependencies:
       - ultralytics-thop==2.0.14
       - urllib3==2.2.3
       - zipp==3.20.2
-prefix: /home/airhust/miniconda3/envs/gjs
+prefix: /home/airhust/miniconda3/envs/<env_name>
