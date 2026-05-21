@@ -173,6 +173,123 @@ target     5847       6210      0.983      0.965      0.983      0.981
 
 实机飞行测试: 20fps 抖动下识别率 96%, 波动仅 2%.
 
+## 全新训练管线 (Workspace)
+
+`workspace/` 目录提供了优化后的训练管线，支持多类别（17 类）目标检测，适配新版 YOLOv12n 模型。
+
+### 项目结构
+
+```
+workspace/
+├── Ultimate_Ready.py      # 主训练入口 (YOLOv12n, 300 epochs, batch=108)
+├── Ultimate8.py           # 增强数据增强脚本 (并行版, 含随机色块+噪声)
+├── Ultimate7.py           # 基础数据增强脚本
+├── yolo12n.pt             # YOLOv12n 预训练权重
+├── yolo11n.pt             # YOLOv11n 预训练权重
+├── input_data/            # 原始数据目录
+│   ├── A/                 # 类别 A 目标图片
+│   ├── B/                 # 类别 B 目标图片
+│   ├── background/        # 背景图片 (17 张)
+│   ├── label/             # YOLO 格式标签
+│   │   └── classes.txt    # 类别名称 (17 类)
+│   └── random/            # 随机杂项图片
+├── dataset/               # 增强后数据集 (自动生成)
+│   ├── images/
+│   │   ├── train/         # 训练集 (80%)
+│   │   └── val/           # 验证集 (20%)
+│   ├── labels/
+│   │   ├── train/
+│   │   ├── val/
+│   │   └── classes.txt
+│   └── dataset.yaml       # YOLO 数据集配置
+└── runs/
+    └── detect/
+        └── escherichia_train/  # 训练输出 (权重/图表/日志)
+```
+
+### 路径配置 (demo)
+
+`demo` 文件提供集中式路径配置模板，所有路径在一处管理：
+
+```
+# 目标图像目录
+TARGET_DIR = "/home/legion/dataset/raw_data"
+# 背景图像目录
+BACKGROUND_DIR = "/home/legion/dataset/background_data"
+# 输出数据集目录
+OUTPUT_DIR = "/home/legion/dataset/aug_data"
+# YOLO 预训练模型路径
+PRETRAINED_MODEL = "/home/legion/dataset/yolov8x.pt"
+# 最终模型保存路径
+FINAL_MODEL_PATH = "/home/legion/dataset/trained_model.pt"
+```
+
+### 增强版数据增强 (Ultimate8.py v2)
+
+相比根目录旧版 `Ultimate8.py`，`workspace/Ultimate8.py` 进行了以下增强：
+
+| 改进项 | 旧版 | 新版 |
+|--------|------|------|
+| 随机色块 | 无 | 每张背景随机绘制 8-20 个彩色矩形块 |
+| 随机噪声 | 无 | 50% 概率添加 0-50 像素强度的噪声 |
+| 基础输出量 | 100 张/轮 | 150 张/轮 |
+| 输出目录 | `yolo_dataset_809/` | `dataset/` |
+| NoneType 防护 | 无 | 新增 `if result:` 空值守卫 |
+| 返回修复 | — | 修复 `process_one_image` 返回值异常 |
+
+增强后的数据生成量: 150 × 360（角度）= 54,000 张/轮，训练/验证按 80/20 自动拆分。
+
+### 17 类多分类支持
+
+旧版为 2 类（H, target）的无人机目标检测。workspace 管线扩展为 17 类通用目标检测：
+
+```
+dog, person, cat, tv, car, meatballs, marinara sauce, tomato soup,
+chicken noodle soup, french onion soup, chicken breast, ribs,
+pulled pork, hamburger, cavity, A, B
+```
+
+类别通过 `input_data/label/classes.txt` 定义，`Ultimate8.py` 自动读取并生成对应的 YAML 配置。
+
+### 最终训练结果 (17 类)
+
+**模型**: YOLOv12n | **算力**: RTX 4090 D 24GB | **训练时长**: 6.702h (169 epochs 收敛)
+
+```
+Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+169/300      22G     0.1584     0.1189     0.7867         15        640
+
+Class     Images  Instances      Box(P)          R      mAP50  mAP50-95)
+all       10683      12108          1          1      0.995      0.995
+```
+
+最佳模型位于 epoch 69（EarlyStopping patience=100 触发），最终验证结果：
+
+```
+Class     Images  Instances      Box(P)          R      mAP50  mAP50-95)
+all       10683      12108          1          1      0.995      0.995
+A          5918       6306          1          1      0.995      0.995
+B          5445       5802          1          1      0.995      0.995
+```
+
+推理速度: 0.1ms 预处理 / 0.5ms 推理 / 0.4ms 后处理，模型体积 5.5MB (optimized)。
+
+### 训练启动
+
+```bash
+conda activate gjs
+
+# 1. 准备数据: 将目标和背景图片放入 workspace/input_data/
+# 2. 编辑 input_data/label/classes.txt 定义类别
+
+# 3. 数据增强 (增强版)
+cd workspace
+python3 Ultimate8.py
+
+# 4. 开始训练
+python3 Ultimate_Ready.py
+```
+
 ## 使用方法
 
 ### 数据准备
