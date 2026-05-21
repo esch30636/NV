@@ -20,3 +20,25 @@ FINAL_MODEL_PATH = "/home/legion/dataset/trained_model.pt"  # 修改为最终模
 
 a next gen program to enhance photos
 翻转、裁剪、缩放、调整对比度
+
+
+      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+    169/300        22G     0.1584     0.1189     0.7867         15        640: 100%|██████████| 402/402 [02:09<00:00,  3.10it/s]
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 50/50 [00:12<00:00,  4.03it/s]
+                   all      10683      12108          1          1      0.995      0.995
+EarlyStopping: Training stopped early as no improvement observed in last 100 epochs. Best results observed at epoch 69, best model saved as best.pt.
+To update EarlyStopping(patience=100) pass a new patience value, i.e. `patience=300` or use `patience=0` to disable EarlyStopping.
+
+169 epochs completed in 6.702 hours.
+Optimizer stripped from runs/detect/escherichia_train/weights/last.pt, 5.5MB
+Optimizer stripped from runs/detect/escherichia_train/weights/best.pt, 5.5MB
+
+Validating runs/detect/escherichia_train/weights/best.pt...
+Ultralytics 8.3.170 🚀 Python-3.8.20 torch-2.1.0+cu121 CUDA:0 (NVIDIA GeForce RTX 4090 D, 24177MiB)
+YOLOv12n summary (fused): 159 layers, 2,560,043 parameters, 0 gradients, 6.3 GFLOPs
+                 Class     Images  Instances      Box(P          R      mAP50  mAP50-95): 100%|██████████| 50/50 [00:18<00:00,  2.68it/s]
+                   all      10683      12108          1          1      0.995      0.995
+                     A       5918       6306          1          1      0.995      0.995
+                     B       5445       5802          1          1      0.995      0.995
+Speed: 0.1ms preprocess, 0.5ms inference, 0.0ms loss, 0.4ms postprocess per image
+Results saved to runs/detect/escherichia_train
