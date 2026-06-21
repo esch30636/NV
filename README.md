@@ -30,8 +30,8 @@ Conda 环境配置参见 `env_NV.txt`。核心依赖：
 - OpenCV, Albumentations, NumPy, Pandas, Matplotlib
 
 ```bash
-conda create -n gjs -f env_NV.txt
-conda activate gjs
+conda create -n <name> -f env_NV.txt
+conda activate <name>
 ```
 
 ## 项目结构
@@ -233,7 +233,7 @@ FINAL_MODEL_PATH = "/home/legion/dataset/trained_model.pt"
 | 随机色块 | 无 | 每张背景随机绘制 8-20 个彩色矩形块 |
 | 随机噪声 | 无 | 50% 概率添加 0-50 像素强度的噪声 |
 | 基础输出量 | 100 张/轮 | 150 张/轮 |
-| 输出目录 | `yolo_dataset_809/` | `dataset/` |
+| 输出目录 | `path/` | `dataset/` |
 | NoneType 防护 | 无 | 新增 `if result:` 空值守卫 |
 | 返回修复 | — | 修复 `process_one_image` 返回值异常 |
 
