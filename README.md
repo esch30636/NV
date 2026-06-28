@@ -31,7 +31,8 @@ The repository now also includes an overfitting-controlled alternative pipeline:
 5. [Deep Analysis: Ultimate7.py](#5-deep-analysis-ultimate7py)
 6. [Deep Analysis: Ultimate8.py](#6-deep-analysis-ultimate8py)
 7. [Deep Analysis: Ultimate_Ready.py](#7-deep-analysis-ultimate_ready-py)
-   - [Overfitting-Controlled Pipeline: Ultimate9.py and Ultimate10.py](#74-overfitting-controlled-pipeline-ultimate9py-and-ultimate10py)
+   - [Deep Analysis: Ultimate9.py](#74-deep-analysis-ultimate9py)
+   - [Deep Analysis: Ultimate10.py](#75-deep-analysis-ultimate10py)
 8. [Auxiliary Scripts / 辅助脚本](#8-auxiliary-scripts--辅助脚本)
 9. [Validation Framework / 验证框架](#9-validation-framework--验证框架)
 10. [Experimental Results / 实验结果](#10-experimental-results--实验结果)
@@ -657,48 +658,205 @@ Mosaic augmentation stitches four training images into a single composite, drama
 
 ---
 
-### 7.4 Overfitting-Controlled Pipeline: Ultimate9.py and Ultimate10.py
+### 7.4 Deep Analysis: Ultimate9.py
 
-`Ultimate9.py` and `Ultimate10.py` provide an alternative path for experiments where validation reliability is more important than maximizing synthetic-data scores.
+`Ultimate9.py` is an overfitting-controlled successor to `Ultimate8.py`. It preserves the same path contract and YOLO output format, but changes the statistical structure of the generated dataset. The central design goal is to reduce validation leakage: validation images should not be near-duplicates of training images produced from the same source foreground record.
 
-`Ultimate9.py` keeps the same directory convention as `Ultimate8.py`:
+`Ultimate9.py` 是 `Ultimate8.py` 的抗过拟合增强版本。它保持相同的输入输出路径约定和 YOLO 数据集格式，但改变了数据集生成的统计结构。核心目标是降低验证集泄漏：验证图像不应是由同一原始前景图生成的训练图像近似副本。
+
+#### 7.4.1 Input and Output Contract / 输入输出约定
+
+The script automatically resolves the project directory. If `input_data/` exists beside the script, it uses the current directory; otherwise it falls back to `workspace/input_data/`. This keeps the interface compatible with the existing `Ultimate8.py` workflow.
+
+脚本会自动解析项目目录。如果脚本同级存在 `input_data/`，则使用当前目录；否则回退到 `workspace/input_data/`。这一设计保持了与 `Ultimate8.py` 流程的接口兼容性。
 
 ```
 input_data/
-|-- background/
+|-- background/              # Background images
 |-- label/
-|   |-- classes.txt
-|-- <class_name>/
+|   |-- classes.txt          # Class-name registry
+|   |-- <image_stem>.txt     # YOLO labels
+|-- <class_name>/            # Foreground images for each class
 ```
 
-The main change is the split policy. Instead of randomly assigning already-generated images to train and validation sets, `Ultimate9.py` first separates source foreground images by class, then generates train and validation samples from different source records. This reduces leakage where near-identical rotations or composites of the same original image appear in both splits.
+The generated dataset follows the standard YOLO layout:
 
-Additional safeguards in `Ultimate9.py`:
+```
+dataset/
+|-- images/train/
+|-- images/val/
+|-- labels/train/
+|-- labels/val/
+|-- labels/classes.txt
+|-- dataset.yaml
+```
 
-| Area | Behavior |
-|:---|:---|
-| Source split | Class-balanced source-level train/validation split |
-| Validation generation | No random color-block injection or additive noise |
-| Training generation | Moderated random color blocks and Gaussian noise |
-| Output layout | Same YOLO layout as `Ultimate8.py`: `dataset/images/*`, `dataset/labels/*`, `dataset.yaml` |
-| Output reset | Existing generated train/validation image and label folders are cleared before regeneration |
+Before regeneration, `Ultimate9.py` clears the generated train/validation image and label folders. This avoids silent mixing between old synthetic samples and the new leakage-controlled split.
 
-`Ultimate10.py` keeps the same training role as `Ultimate_Ready.py`, but applies a more conservative training schedule:
+#### 7.4.2 Source-Isolated Split / 源图隔离拆分
 
-| Parameter Area | `Ultimate_Ready.py` | `Ultimate10.py` |
+`Ultimate8.py` assigns each generated composite image to train or validation after synthesis. This can allow the same source object to appear in both splits with only a rotation, scale, or background change. `Ultimate9.py` reverses that order:
+
+`Ultimate8.py` 在合成之后再随机决定图片属于训练集或验证集，因此同一源目标可能以不同旋转、缩放或背景同时出现在两个集合中。`Ultimate9.py` 将顺序反过来：
+
+```
+1. Read all labeled foreground records.
+2. Group records by class id.
+3. Shuffle each class group with a fixed seed.
+4. Reserve a class-balanced subset as validation sources.
+5. Generate train images only from train sources.
+6. Generate val images only from val sources.
+```
+
+Mathematically, let `S_c` be the set of original foreground records for class `c`. The split constructs disjoint source subsets:
+
+```
+S_c = S_c_train union S_c_val
+S_c_train intersection S_c_val = empty set
+```
+
+This does not prove real-world generalization, but it makes validation stricter than a post-generation random split because the validation set is no longer generated from the same original foreground records as training.
+
+#### 7.4.3 Train-Only Domain Randomization / 仅训练集域随机化
+
+The offline augmentation strength is deliberately asymmetric:
+
+| Split | Color blocks | Noise | Purpose |
+|:---|:---|:---|:---|
+| Train | Enabled with moderated probability | Enabled with moderated Gaussian noise | Reduce memorization of background texture and exact object boundaries |
+| Val | Disabled | Disabled | Measure detection performance on cleaner held-out synthetic samples |
+
+This differs from `Ultimate8.py`, where random color blocks and additive intensity noise are applied uniformly to the generated image stream. In `Ultimate9.py`, validation images remain closer to ordinary composites, making the validation score less dependent on the same artificial perturbation distribution used for training.
+
+#### 7.4.4 Geometric Transformation and Label Propagation / 几何变换与标签传播
+
+For each selected foreground image, the script samples:
+
+```
+theta ~ U(0, 360)
+alpha ~ U(0.25, 0.75)
+```
+
+where `theta` is the rotation angle and `alpha` is the scaling factor. The foreground and its bounding boxes are transformed by the same affine matrix:
+
+```
+P' = P * M^T
+```
+
+where `P` contains the four homogeneous bounding-box corner coordinates. The transformed quadrilateral is converted back to an axis-aligned YOLO box by taking the minimum and maximum transformed x/y coordinates. The final placement step maps the foreground-local box into the background canvas:
+
+```
+x_final = (x_local * w_fg + x_offset) / w_bg
+y_final = (y_local * h_fg + y_offset) / h_bg
+w_final = (w_local * w_fg) / w_bg
+h_final = (h_local * h_fg) / h_bg
+```
+
+The same minimum box-size clamp used in the prior pipeline is retained to avoid degenerate labels.
+
+#### 7.4.5 Generation Scale and Reproducibility / 生成规模与可复现性
+
+Default generation settings:
+
+| Parameter | Value | Role |
 |:---|:---|:---|
-| Epochs | 300 | 220 |
-| Early stopping patience | 100 | 35 |
-| Batch size | 108 | 64 |
-| Optimizer | auto | AdamW |
-| Weight decay | 0.0005 | 0.001 |
-| Learning-rate schedule | fixed schedule | cosine schedule |
-| Mosaic | 1.0 | 0.6 |
-| Random erasing | 0.4 | 0.2 |
-| Horizontal flip | 0.5 | 0.0 |
-| Dropout | 0.0 | 0.05 |
+| `SEED` | 42 | Fixed random seed for repeatable source splits and generation |
+| `TRAIN_RATIO` | 0.8 | Source-level train/validation split ratio |
+| `TRAIN_IMAGES` | 12000 | Number of training composites to generate |
+| `VAL_IMAGES` | 3000 | Number of validation composites to generate |
+| `TARGET_SIZE` | 640 x 640 | Background resize target and YOLO input alignment |
+| `MAX_OBJECTS_PER_IMAGE` | 4 | Upper bound on objects per composite |
 
-This configuration is intended to make validation scores more conservative and reduce overfitting to repeated synthetic patterns. If the resulting model underfits, increase `TRAIN_IMAGES`, relax `patience`, or raise `mosaic` gradually rather than restoring all augmentation strength at once.
+Compared with the `54,000` image default of `Ultimate8.py`, the default `15,000` image output is smaller and more conservative. The intention is to trade some synthetic volume for a validation protocol that better exposes overfitting.
+
+#### 7.4.6 Failure Conditions / 失败条件
+
+`Ultimate9.py` intentionally stops early if required inputs are missing. The most important hard stop is an empty `input_data/background/` directory. This is preferable to silently generating invalid images or training on stale cached data.
+
+### 7.5 Deep Analysis: Ultimate10.py
+
+`Ultimate10.py` is the training counterpart to `Ultimate9.py`. It keeps the YOLOv12n training role of `Ultimate_Ready.py`, but adjusts the optimization and augmentation schedule to make overfitting easier to detect and harder to amplify.
+
+`Ultimate10.py` 是 `Ultimate9.py` 的配套训练脚本。它保留 `Ultimate_Ready.py` 中 YOLOv12n 训练入口的角色，但调整优化器、训练周期和在线增强强度，使过拟合更容易被发现，也更难被训练过程放大。
+
+#### 7.5.1 Path Resolution and Model Loading / 路径解析与模型加载
+
+The script resolves the project directory using the same convention as `Ultimate9.py`: it first checks for `dataset/dataset.yaml` beside the script, then falls back to `workspace/dataset/dataset.yaml`. It then changes the working directory to the resolved project path before training, so relative YOLO paths remain stable.
+
+Model loading prefers local weights when present:
+
+```
+1. yolo12n.pt
+2. yolo12n
+3. yolo11n.pt
+```
+
+This keeps the script aligned with the existing repository layout while still allowing Ultralytics to resolve a named model when the local weight file is absent.
+
+#### 7.5.2 Training Regime / 训练制度
+
+| Parameter | `Ultimate_Ready.py` | `Ultimate10.py` | Effect |
+|:---|:---|:---|:---|
+| `epochs` | 300 | 220 | Shorter training horizon reduces memorization risk |
+| `patience` | 100 | 35 | Earlier stop when validation no longer improves |
+| `batch` | 108 | 64 | More conservative memory profile and noisier gradient estimates |
+| `seed` | 0 | 42 | Matches the data-generation seed family |
+| `name` | `escherichia_train` | `escherichia_train_u10` | Keeps new results separate from prior runs |
+
+The reduced patience is the most important anti-overfitting control in this group. It prevents a long tail of training epochs from continuing after validation improvement has saturated.
+
+#### 7.5.3 Optimization and Regularization / 优化与正则化
+
+`Ultimate10.py` switches from `optimizer='auto'` to `optimizer='AdamW'`, increases weight decay, enables cosine learning-rate scheduling, and adds dropout:
+
+| Parameter | Value | Rationale |
+|:---|:---|:---|
+| `optimizer` | `AdamW` | Decouples weight decay from adaptive gradient updates |
+| `lr0` | 0.003 | Lower initial learning rate than the prior 0.01 setting |
+| `lrf` | 0.02 | Maintains a nonzero final learning-rate factor |
+| `weight_decay` | 0.001 | Stronger L2-style regularization |
+| `cos_lr` | `True` | Smooth learning-rate decay over training |
+| `dropout` | 0.05 | Light model-side regularization |
+| `warmup_epochs` | 4.0 | Slightly longer warmup for stable early optimization |
+
+The combined effect is a smoother and more regularized optimization path. This is appropriate for synthetic datasets, where excessive training confidence can appear before the model has learned robust visual invariances.
+
+#### 7.5.4 Online Augmentation Schedule / 在线增强调度
+
+Because `Ultimate9.py` already performs offline rotation, scale variation, compositing, and train-only noise, the online YOLO augmentation schedule is moderated:
+
+| Parameter | `Ultimate_Ready.py` | `Ultimate10.py` | Interpretation |
+|:---|:---|:---|:---|
+| `hsv_h` | 0.015 | 0.01 | Slightly weaker hue perturbation |
+| `hsv_s` | 0.7 | 0.35 | Lower saturation distortion |
+| `hsv_v` | 0.4 | 0.25 | Lower brightness distortion |
+| `translate` | 0.1 | 0.08 | Reduced positional jitter |
+| `scale` | 0.5 | 0.35 | Reduced online scale jitter |
+| `fliplr` | 0.5 | 0.0 | Disabled because target orientation may encode task information |
+| `mosaic` | 1.0 | 0.6 | Retains context diversity without dominating the image distribution |
+| `erasing` | 0.4 | 0.2 | Reduces destructive occlusion pressure |
+| `close_mosaic` | 10 | 25 | Longer final phase on non-mosaic images |
+
+The guiding principle is to avoid double-counting augmentation. Offline synthesis already creates a wide geometric and compositional distribution; online augmentation should regularize the model, not erase the signal that distinguishes the target classes.
+
+#### 7.5.5 Expected Diagnostics / 预期诊断方式
+
+The expected output directory is:
+
+```
+runs/detect/escherichia_train_u10/
+```
+
+The main diagnostic comparison is between the old and new validation behavior:
+
+| Observation | Likely Interpretation |
+|:---|:---|
+| Lower validation mAP than `Ultimate_Ready.py`, but more stable train/val gap | Prior validation was likely optimistic due to split leakage |
+| Both train and validation losses remain high | The new schedule may be underfitting; increase `TRAIN_IMAGES` or relax `patience` |
+| Train loss falls while validation mAP degrades | Overfitting remains; reduce online augmentation conflict and inspect source split quality |
+| Validation mAP improves late after mosaic closes | The longer `close_mosaic=25` phase is helping final distribution alignment |
+
+The recommended tuning order is conservative: first increase data volume, then adjust early stopping, and only then raise augmentation strength. This avoids returning immediately to the more optimistic but leak-prone behavior of the previous pipeline.
 
 ---
 
