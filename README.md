@@ -16,6 +16,8 @@
 
 This repository presents a complete pipeline for UAV-based object detection, comprising three principal components: (i) a geometry-aware data augmentation engine (`Ultimate7.py`) that synthesizes training images via affine transformations and alpha compositing of foreground objects onto arbitrary backgrounds; (ii) an enhanced augmentation variant (`Ultimate8.py`) incorporating stochastic color-block injection and intensity noise for improved domain randomization; and (iii) a production-grade training harness (`Ultimate_Ready.py`) built upon Ultralytics YOLOv12n with exhaustive hyperparameter exposition. The pipeline achieves a mean Average Precision at 50% IoU (mAP@50) of 0.995 and mAP@50-95 of 0.995 on a 17-class detection task, with inference latency of 0.5 ms per frame on an NVIDIA GeForce RTX 4090 D. This document provides a rigorous mathematical treatment of the underlying algorithms, including affine bounding-box transformation, alpha-channel compositing, and the YOLO composite loss function, presented in an IEEE-style academic format with full bilingual annotation.
 
+The repository now also includes an overfitting-controlled alternative pipeline: `Ultimate9.py` for source-isolated dataset generation and `Ultimate10.py` for regularized YOLO training. This pair keeps the same input/output path convention as `Ultimate8.py` and `Ultimate_Ready.py`, while reducing train/validation leakage, moderating augmentation strength, and using a more conservative early-stopping strategy.
+
 本仓库提出了一套完整的无人机目标检测管线，包含三个核心组件：(i) 基于几何感知的数据增强引擎（`Ultimate7.py`），通过仿射变换与Alpha合成将前景目标嵌入任意背景以生成训练图像；(ii) 增强型数据增强变体（`Ultimate8.py`），引入随机色块注入与强度噪声以实现更优的域随机化；(iii) 基于Ultralytics YOLOv12n的生产级训练框架（`Ultimate_Ready.py`），提供详尽的超参数配置。该管线在17类目标检测任务上达到0.995的mAP@50与0.995的mAP@50-95，单帧推理延迟为0.5毫秒（NVIDIA GeForce RTX 4090 D）。本文对底层算法提供严格的数学处理，包括仿射边界框变换、Alpha通道合成与YOLO复合损失函数，以IEEE风格学术格式呈现，并提供完整的中英双语注释。
 
 ---
@@ -29,6 +31,7 @@ This repository presents a complete pipeline for UAV-based object detection, com
 5. [Deep Analysis: Ultimate7.py](#5-deep-analysis-ultimate7py)
 6. [Deep Analysis: Ultimate8.py](#6-deep-analysis-ultimate8py)
 7. [Deep Analysis: Ultimate_Ready.py](#7-deep-analysis-ultimate_ready-py)
+   - [Overfitting-Controlled Pipeline: Ultimate9.py and Ultimate10.py](#74-overfitting-controlled-pipeline-ultimate9py-and-ultimate10py)
 8. [Auxiliary Scripts / 辅助脚本](#8-auxiliary-scripts--辅助脚本)
 9. [Validation Framework / 验证框架](#9-validation-framework--验证框架)
 10. [Experimental Results / 实验结果](#10-experimental-results--实验结果)
@@ -91,9 +94,9 @@ The pipeline follows a two-phase paradigm: **synthetic data generation** followe
 
 ## 3. Environment / 运行环境
 
-The environment is managed via Conda with the configuration specified in `env_NV.txt`.
+The environment is managed via Conda. For the overfitting-controlled pipeline, use `environment.yml` as the preferred environment file; `env_NV.txt` is retained as the original environment specification.
 
-环境通过Conda管理，配置文件为`env_NV.txt`。
+环境通过Conda管理；新的抗过拟合流程优先使用`environment.yml`，`env_NV.txt`保留为原始环境规格。
 
 ### Core Dependencies / 核心依赖
 
@@ -111,8 +114,8 @@ The environment is managed via Conda with the configuration specified in `env_NV
 ### Installation / 安装
 
 ```bash
-conda create -n <env_name> -f env_NV.txt
-conda activate <env_name>
+conda env create -f environment.yml
+conda activate traxler
 ```
 
 ---
@@ -180,6 +183,13 @@ NV/
 |           |-- escherichia_train/
 |               |-- weights/   # Model checkpoints / 模型检查点
 |               |-- results/   # Metrics and plots / 指标与图表
+```
+
+Additional overfitting-control files:
+
+```
+Ultimate9.py   # Source-isolated dataset generation with moderated offline augmentation
+Ultimate10.py  # Regularized YOLO training configuration for the Ultimate9 dataset
 ```
 
 ---
@@ -647,6 +657,51 @@ Mosaic augmentation stitches four training images into a single composite, drama
 
 ---
 
+### 7.4 Overfitting-Controlled Pipeline: Ultimate9.py and Ultimate10.py
+
+`Ultimate9.py` and `Ultimate10.py` provide an alternative path for experiments where validation reliability is more important than maximizing synthetic-data scores.
+
+`Ultimate9.py` keeps the same directory convention as `Ultimate8.py`:
+
+```
+input_data/
+|-- background/
+|-- label/
+|   |-- classes.txt
+|-- <class_name>/
+```
+
+The main change is the split policy. Instead of randomly assigning already-generated images to train and validation sets, `Ultimate9.py` first separates source foreground images by class, then generates train and validation samples from different source records. This reduces leakage where near-identical rotations or composites of the same original image appear in both splits.
+
+Additional safeguards in `Ultimate9.py`:
+
+| Area | Behavior |
+|:---|:---|
+| Source split | Class-balanced source-level train/validation split |
+| Validation generation | No random color-block injection or additive noise |
+| Training generation | Moderated random color blocks and Gaussian noise |
+| Output layout | Same YOLO layout as `Ultimate8.py`: `dataset/images/*`, `dataset/labels/*`, `dataset.yaml` |
+| Output reset | Existing generated train/validation image and label folders are cleared before regeneration |
+
+`Ultimate10.py` keeps the same training role as `Ultimate_Ready.py`, but applies a more conservative training schedule:
+
+| Parameter Area | `Ultimate_Ready.py` | `Ultimate10.py` |
+|:---|:---|:---|
+| Epochs | 300 | 220 |
+| Early stopping patience | 100 | 35 |
+| Batch size | 108 | 64 |
+| Optimizer | auto | AdamW |
+| Weight decay | 0.0005 | 0.001 |
+| Learning-rate schedule | fixed schedule | cosine schedule |
+| Mosaic | 1.0 | 0.6 |
+| Random erasing | 0.4 | 0.2 |
+| Horizontal flip | 0.5 | 0.0 |
+| Dropout | 0.0 | 0.05 |
+
+This configuration is intended to make validation scores more conservative and reduce overfitting to repeated synthetic patterns. If the resulting model underfits, increase `TRAIN_IMAGES`, relax `patience`, or raise `mosaic` gradually rather than restoring all augmentation strength at once.
+
+---
+
 ## 8. Auxiliary Scripts / 辅助脚本
 
 ### 8.1 Script Evolution: The Test Series / 脚本演进：Test系列
@@ -856,6 +911,19 @@ Training outputs are written to `workspace/runs/detect/escherichia_train/`, incl
 
 训练输出写入 `workspace/runs/detect/escherichia_train/`，包括模型检查点（`weights/best.pt`， `weights/last.pt`）、损失曲线、混淆矩阵和各类别指标。
 
+**Recommended Overfitting-Controlled Execution**
+
+Use this path from the repository root when the main concern is validation leakage or overfitting to repeated synthetic patterns.
+
+```bash
+python3 Ultimate9.py
+python3 Ultimate10.py
+```
+
+`Ultimate9.py` writes the same `dataset/` structure expected by YOLO. `Ultimate10.py` writes training outputs to `runs/detect/escherichia_train_u10/`.
+
+Before running `Ultimate9.py`, ensure `input_data/background/` contains background images. The script intentionally stops if no usable background image is found.
+
 **Step 4: Validation / 第四步：验证**
 
 ```bash
@@ -914,4 +982,3 @@ SOFTWARE.
 6. DeVries, T., & Taylor, G. W. (2017). Improved Regularization of Convolutional Neural Networks with Cutout. *arXiv preprint arXiv:1708.04552*.
 
 ---
-
