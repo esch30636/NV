@@ -18,7 +18,7 @@ This repository presents a complete pipeline for UAV-based object detection, com
 
 The repository now also includes an overfitting-controlled alternative pipeline: `Ultimate9.py` for source-isolated dataset generation and `Ultimate10.py` for regularized YOLO training. This pair keeps the same input/output path convention as `Ultimate8.py` and `Ultimate_Ready.py`, while reducing train/validation leakage, moderating augmentation strength, and using a more conservative early-stopping strategy.
 
-本仓库提出了一套完整的无人机目标检测管线，包含三个核心组件：(i) 基于几何感知的数据增强引擎（`Ultimate7.py`），通过仿射变换与Alpha合成将前景目标嵌入任意背景以生成训练图像；(ii) 增强型数据增强变体（`Ultimate8.py`），引入随机色块注入与强度噪声以实现更优的域随机化；(iii) 基于Ultralytics YOLOv12n的生产级训练框架（`Ultimate_Ready.py`），提供详尽的超参数配置。该管线在17类目标检测任务上达到0.995的mAP@50与0.995的mAP@50-95，单帧推理延迟为0.5毫秒（NVIDIA GeForce RTX 4090 D）。本文对底层算法提供严格的数学处理，包括仿射边界框变换、Alpha通道合成与YOLO复合损失函数，以IEEE风格学术格式呈现，并提供完整的中英双语注释。
+本仓库提出了一套完整的无人机目标检测管线，包含三个核心组件：(i) 基于几何感知的数据增强引擎（`Ultimate7.py`），通过仿射变换与Alpha合成将前景目标嵌入任意背景以生成训练图像；(ii) 增强型数据增强变体（`Ultimate8.py`），引入随机色块注入与强度噪声以实现更优的域随机化；(iii) 基于Ultralytics YOLOv12n的生产级训练框架（`Ultimate_Ready.py`），提供详尽的超参数配置。该管线在17类目标检测任务上达到0.995的mAP@50与0.995的mAP@50-95，单帧推理延迟为0.5毫秒（NVIDIA GeForce RTX 4090 D）。
 
 ---
 
