@@ -33,6 +33,7 @@ The repository now also includes an overfitting-controlled alternative pipeline:
 7. [Deep Analysis: Ultimate_Ready.py](#7-deep-analysis-ultimate_ready-py)
    - [Deep Analysis: Ultimate9.py](#74-deep-analysis-ultimate9py)
    - [Deep Analysis: Ultimate10.py](#75-deep-analysis-ultimate10py)
+   - [Deep Analysis: Ultimate11.py](#76-deep-analysis-ultimate11py)
 8. [Auxiliary Scripts / 辅助脚本](#8-auxiliary-scripts--辅助脚本)
 9. [Validation Framework / 验证框架](#9-validation-framework--验证框架)
 10. [Experimental Results / 实验结果](#10-experimental-results--实验结果)
@@ -191,6 +192,7 @@ Additional overfitting-control files:
 ```
 Ultimate9.py   # Source-isolated dataset generation with moderated offline augmentation
 Ultimate10.py  # Regularized YOLO training configuration for the Ultimate9 dataset
+Ultimate11.py  # Unified data augmentation + training with three-module adaptive early stopping
 ```
 
 ---
@@ -858,6 +860,170 @@ The main diagnostic comparison is between the old and new validation behavior:
 
 The recommended tuning order is conservative: first increase data volume, then adjust early stopping, and only then raise augmentation strength. This avoids returning immediately to the more optimistic but leak-prone behavior of the previous pipeline.
 
+### 7.6 Deep Analysis: Ultimate11.py
+
+`Ultimate11.py` is a unified single-file pipeline that merges the data augmentation engine of `Ultimate8.py` with the training harness of `Ultimate_Ready.py`, and replaces the built-in `patience`-based early stopping with a principled three-module adaptive termination system. The central design thesis is: **a single script should carry the user from raw foreground images to a fully trained model**, while the stopping criterion should be grounded in explicit optimization-state diagnostics rather than a single scalar patience counter.
+
+`Ultimate11.py` 是一个统一的单文件管线，将 `Ultimate8.py` 的数据增强引擎与 `Ultimate_Ready.py` 的训练框架合并为一体，并以基于显式优化状态诊断的三模块自适应终止系统取代内置的 `patience` 早停机制。核心设计理念是：**单个脚本即可将用户从原始前景图像引导至完全训练的模型**，而停止判定应基于明确的优化状态诊断，而非单一的标量耐心计数器。
+
+#### 7.6.1 Architectural Unification / 架构统一
+
+Prior to `Ultimate11.py`, the pipeline required two separate invocations: one for data generation (`Ultimate8.py`) and one for training (`Ultimate_Ready.py`). `Ultimate11.py` consolidates both stages behind a single CLI interface:
+
+在 `Ultimate11.py` 之前，管线需要两次独立调用：一次用于数据生成（`Ultimate8.py`），一次用于训练（`Ultimate_Ready.py`）。`Ultimate11.py` 将两个阶段统一到单一CLI接口之后：
+
+```bash
+python Ultimate11.py train       # Training only / 仅训练
+python Ultimate11.py generate    # Dataset generation only / 仅生成数据集
+python Ultimate11.py all         # Generate then train (default) / 生成后训练（默认）
+```
+
+All file interfaces and path definitions (`input_data/`, `dataset/`, `runs/detect/train`) remain identical to their predecessors, preserving backward compatibility with the existing workspace layout.
+
+所有文件接口和路径定义（`input_data/`、`dataset/`、`runs/detect/train`）与前代保持一致，保持与现有工作区布局的向后兼容性。
+
+The data generation subsystem is a faithful reproduction of the `Ultimate8.py` augmentation pipeline, including stochastic color-block injection, additive intensity noise, affine rotation (360 angular variants), non-overlap placement, and multiprocessing parallelism. The training subsystem preserves the full hyperparameter exposition of `Ultimate_Ready.py`, with one critical modification: the built-in `patience` parameter is set to `0`, fully delegating termination authority to the `AdaptiveEarlyStopper` callback.
+
+数据生成子系统忠实复现了 `Ultimate8.py` 的增强管线，包括随机色块注入、加性强度噪声、仿射旋转（360个角度变体）、无重叠放置和多进程并行。训练子系统保留了 `Ultimate_Ready.py` 的完整超参数详解，仅有一个关键修改：内置 `patience` 参数设为 `0`，将终止权完全委托给 `AdaptiveEarlyStopper` 回调。
+
+#### 7.6.2 Three-Module Adaptive Early Stopping / 三模块自适应早停
+
+The early stopping system introduces four monitored variables per epoch:
+
+早停系统在每个epoch引入四个监控变量：
+
+| Symbol / 符号 | Definition / 定义 |
+|:---|:---|
+| `Fitness_t` | Composite fitness score: `0.1 * Precision + 0.9 * Recall` / 综合适应度分数 |
+| `L_val^(t)` | Validation set total loss (sum of all loss components) / 验证集总损失 |
+| `LR_t` | Current learning rate (mean across optimizer parameter groups) / 当前学习率（优化器参数组均值） |
+| `L_train^(t)` | Training set total loss: `box_loss + cls_loss + dfl_loss` / 训练集总损失 |
+
+The termination decision at epoch `T` is governed by the Boolean formula:
+
+第 `T` 轮的终止判定由以下布尔公式控制：
+
+```
+Stop(T) = Overfit(T) OR (FullyLearned(T) AND Plateau(T))
+```
+
+The semantic interpretation is: "If overfitting is detected, stop immediately; otherwise, stop only when the model has been fully trained and performance has plateaued."
+
+其语义解释为："如果检测到过拟合，立即停止；否则，仅当模型已充分训练且性能不再提升时，平稳停止。"
+
+**Module A: Overfit Kill Switch / 模块A：过拟合熔断**
+
+Overfitting is identified by a sustained upward trend in validation loss, not by isolated epoch-to-epoch fluctuations. The kill switch fires when every recent validation loss exceeds the historical best by a tolerance margin:
+
+过拟合通过验证集损失的持续上升趋势来识别，而非孤立的逐轮波动。当最近所有验证集损失均超过历史最优值一定容忍幅度时，触发熔断：
+
+```
+Overfit(T) = ForAll t in [T-k, T]: L_val^(t) > min_{i<t}(L_val^(i)) * (1 + gamma)
+```
+
+| Parameter / 参数 | Default / 默认值 | Role / 作用 |
+|:---|:---|:---|
+| `k` | 5 | Observation window size / 观察窗口大小 |
+| `gamma` | 0.02 | Tolerance ratio (2% above historical best) / 容忍比例（历史最优值之上2%） |
+
+When Module A triggers, training is halted and the system recommends rolling back to the weights corresponding to the historical minimum `L_val`. This module is always active, regardless of training stage --- it serves as an unconditional circuit breaker.
+
+当模块A触发时，训练被中止，系统建议回滚到历史最低 `L_val` 对应的权重。该模块始终活跃，不受训练阶段限制——它充当无条件的熔断器。
+
+**Module B: Fully Learned Guard / 模块B：充分学习保障**
+
+Module B prevents premature termination during the high-learning-rate phase. It enforces that the optimizer has traversed the majority of its annealing schedule before the model is eligible for plateau-based stopping:
+
+模块B防止在学习率较高阶段过早终止。它强制要求优化器走完退火过程的大部分后，模型才有资格进入基于平台期的停止判定：
+
+```
+FullyLearned(T) = (LR_T <= alpha * LR_initial) AND (T >= T_min)
+```
+
+| Parameter / 参数 | Default / 默认值 | Role / 作用 |
+|:---|:---|:---|
+| `alpha` | 0.1 | Learning rate decay threshold (10% of initial) / 学习率衰减阈值（初始值的10%） |
+| `T_min` | 100 | Minimum epoch count / 最低训练轮数 |
+
+This module ensures that during the first approximately 70% of training, the model continues to learn regardless of short-term metric stagnation. Only when the learning rate has decayed to a small fraction of its initial value and a minimum epoch budget has been exhausted does the model enter the plateau evaluation window.
+
+该模块确保在训练的前约70%期间，无论短期指标是否停滞，模型都继续学习。只有当学习率衰减到初始值的极小比例且最低轮数预算已耗尽时，模型才进入平台期评估窗口。
+
+**Module C: Plateau Detector / 模块C：收益递减判定**
+
+Once Module B grants eligibility, Module C evaluates whether the model has genuinely exhausted its learning capacity. It imposes two simultaneous conditions:
+
+一旦模块B授予资格，模块C评估模型是否真正耗尽了学习能力。它施加两个同时成立的条件：
+
+```
+Plateau(T) = ( max_{t in [T-P, T]} Fitness_t <= Fitness_best + epsilon )
+           AND ( (L_train^(T-P) - L_train^(T)) / L_train^(T-P) <= delta )
+```
+
+| Parameter / 参数 | Default / 默认值 | Role / 作用 |
+|:---|:---|:---|
+| `P` | 30 | Patience window / 耐心窗口 |
+| `epsilon` | 0.001 | Fitness tolerance for negligible improvement / 适应度容忍极小波动 |
+| `delta` | 0.01 | Training loss relative drop threshold (1%) / 训练损失相对下降率阈值（1%） |
+
+The first condition requires that the composite fitness score has not meaningfully exceeded its historical best within the patience window. The second condition requires that the training loss itself has stopped decreasing at a meaningful rate. Only when both the validation-oriented metric (fitness) and the training-oriented metric (loss) confirm stagnation does the plateau detector fire.
+
+第一个条件要求在耐心窗口内综合适应度分数未显著超越历史最优。第二个条件要求训练损失本身已停止以有意义的速率下降。只有当面向验证集的指标（适应度）和面向训练集的指标（损失）同时确认停滞时，平台期检测器才会触发。
+
+#### 7.6.3 Callback Integration / 回调集成
+
+The `AdaptiveEarlyStopper` class is registered via Ultralytics' callback mechanism:
+
+`AdaptiveEarlyStopper` 类通过Ultralytics的回调机制注册：
+
+```python
+callbacks.on_train_start.append(stopper.on_train_start)
+callbacks.on_train_epoch_end.append(stopper.on_train_epoch_end)
+```
+
+At `on_train_start`, the initial learning rate `LR_initial` is recorded from the optimizer's parameter groups. At each `on_train_epoch_end`, the callback:
+
+1. Collects `LR_t`, `L_val^(t)`, `L_train^(t)`, and `Fitness_t` from the trainer object;
+2. Appends each metric to its respective history buffer;
+3. Updates `best_val_loss` and `best_fitness` trackers;
+4. Evaluates Modules A, B, and C in sequence;
+5. If `Stop(T)` evaluates to `True`, sets `trainer.stop = True` and `trainer.epochs = epoch` to halt training.
+
+在 `on_train_start` 时，从优化器参数组记录初始学习率 `LR_initial`。在每个 `on_train_epoch_end` 时，回调执行：
+
+1. 从trainer对象收集 `LR_t`、`L_val^(t)`、`L_train^(t)` 和 `Fitness_t`；
+2. 将各指标追加到对应的历史记录缓冲区；
+3. 更新 `best_val_loss` 和 `best_fitness` 跟踪器；
+4. 按顺序评估模块A、B和C；
+5. 若 `Stop(T)` 为 `True`，设置 `trainer.stop = True` 和 `trainer.epochs = epoch` 以中止训练。
+
+#### 7.6.4 Operational Phases / 运行阶段
+
+The three-module system partitions the training horizon into two behavioral regimes:
+
+三模块系统将训练周期划分为两个行为阶段：
+
+| Phase / 阶段 | Approximate Span / 大致范围 | Active Modules / 活跃模块 | Behavior / 行为 |
+|:---|:---|:---|:---|
+| Forced Learning / 强制学习 | Epochs 1 to ~70% | A only / 仅A | Training continues unless overfitting is detected; short-term stagnation is ignored / 除非检测到过拟合否则继续训练；忽略短期停滞 |
+| Micro-tuning / 微调阶段 | Final ~30% | A, B, and C / A、B和C | Plateau detection is enabled; training stops when both fitness and loss confirm no further gain / 启用平台期检测；当适应度和损失均确认无进一步收益时停止 |
+
+This design prevents two failure modes common in naive patience-based early stopping: (1) stopping too early when the learning rate is still high and temporary metric plateaus are expected, and (2) continuing to train long after the model has stopped improving, wasting compute and risking late-stage overfitting.
+
+该设计防止了基于朴素耐心的早停中常见的两种失败模式：(1) 在学习率仍然较高且预期出现临时指标停滞时过早停止；(2) 在模型已停止改善后继续训练，浪费计算资源并面临后期过拟合风险。
+
+#### 7.6.5 Default Parameter Summary / 默认参数总览
+
+| Module / 模块 | Parameter / 参数 | Symbol / 符号 | Value / 值 |
+|:---|:---|:---|:---|
+| A: Overfit Kill Switch | Observation window / 观察窗口 | `k` | 5 |
+| A: Overfit Kill Switch | Tolerance ratio / 容忍比例 | `gamma` | 0.02 |
+| B: Fully Learned Guard | LR decay threshold / 学习率衰减阈值 | `alpha` | 0.1 |
+| B: Fully Learned Guard | Minimum epochs / 最低轮数 | `T_min` | 100 |
+| C: Plateau Detector | Patience window / 耐心窗口 | `P` | 30 |
+| C: Plateau Detector | Fitness tolerance / 适应度容忍 | `epsilon` | 0.001 |
+| C: Plateau Detector | Loss drop threshold / 损失下降阈值 | `delta` | 0.01 |
+
 ---
 
 ## 8. Auxiliary Scripts / 辅助脚本
@@ -1081,6 +1247,22 @@ python3 Ultimate10.py
 `Ultimate9.py` writes the same `dataset/` structure expected by YOLO. `Ultimate10.py` writes training outputs to `runs/detect/escherichia_train_u10/`.
 
 Before running `Ultimate9.py`, ensure `input_data/background/` contains background images. The script intentionally stops if no usable background image is found.
+
+**Unified Pipeline Execution / 统一管线执行**
+
+`Ultimate11.py` provides a single-file alternative that combines data generation and training with the three-module adaptive early stopping system. Run from the repository root:
+
+`Ultimate11.py` 提供单文件替代方案，将数据生成与训练结合为一体，并配备三模块自适应早停系统。从仓库根目录运行：
+
+```bash
+python3 Ultimate11.py all         # Generate dataset then train (default) / 生成数据集后训练（默认）
+python3 Ultimate11.py generate    # Dataset generation only / 仅生成数据集
+python3 Ultimate11.py train       # Training only (requires existing dataset) / 仅训练（需要已有数据集）
+```
+
+Training outputs are written to `runs/detect/train/`. The `AdaptiveEarlyStopper` prints per-epoch diagnostic logs including `LR`, `L_val`, `L_train`, `Fitness`, and any triggered module flags (`OVERFIT`, `FULLY_LEARNED`, `PLATEAU`).
+
+训练输出写入 `runs/detect/train/`。`AdaptiveEarlyStopper` 在每个epoch打印诊断日志，包括 `LR`、`L_val`、`L_train`、`Fitness` 以及触发的模块标志（`OVERFIT`、`FULLY_LEARNED`、`PLATEAU`）。
 
 **Step 4: Validation / 第四步：验证**
 
