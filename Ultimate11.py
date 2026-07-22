@@ -354,6 +354,8 @@ class AdaptiveEarlyStopper:
 
     Stop(T) = Overfit(T) ∨ (FullyLearned(T) ∧ Plateau(T))
 
+    Fitness_t = mAP50 × 0.1 + mAP50-95 × 0.9
+
     模块 A — Overfit Kill Switch:
         最近 k 轮 val_loss 均 > best_val_loss × (1+γ) → 熔断并回滚最佳权重
 
@@ -439,13 +441,13 @@ class AdaptiveEarlyStopper:
         except Exception:
             pass
 
-        # 适应度 fitness = (P * 0.1 + R * 0.9) 或直接用 metrics
+        # 适应度 fitness = (mAP50 * 0.1 + mAP50-95 * 0.9)
         fitness = 0.0
         try:
             if hasattr(trainer, 'metrics') and trainer.metrics:
-                p = float(trainer.metrics.get('metrics/precision(B)', 0.0))
-                r = float(trainer.metrics.get('metrics/recall(B)', 0.0))
-                fitness = p * 0.1 + r * 0.9
+                map50 = float(trainer.metrics.get('metrics/mAP50(B)', 0.0))
+                map50_95 = float(trainer.metrics.get('metrics/mAP50-95(B)', 0.0))
+                fitness = map50 * 0.1 + map50_95 * 0.9
         except Exception:
             pass
 

@@ -894,7 +894,7 @@ The early stopping system introduces four monitored variables per epoch:
 
 | Symbol / 符号 | Definition / 定义 |
 |:---|:---|
-| `Fitness_t` | Composite fitness score: `0.1 * Precision + 0.9 * Recall` / 综合适应度分数 |
+| `Fitness_t` | Composite fitness score: `0.1 * mAP50 + 0.9 * mAP50-95` / 综合适应度分数 |
 | `L_val^(t)` | Validation set total loss (sum of all loss components) / 验证集总损失 |
 | `LR_t` | Current learning rate (mean across optimizer parameter groups) / 当前学习率（优化器参数组均值） |
 | `L_train^(t)` | Training set total loss: `box_loss + cls_loss + dfl_loss` / 训练集总损失 |
@@ -966,9 +966,9 @@ Plateau(T) = ( max_{t in [T-P, T]} Fitness_t <= Fitness_best + epsilon )
 | `epsilon` | 0.001 | Fitness tolerance for negligible improvement / 适应度容忍极小波动 |
 | `delta` | 0.01 | Training loss relative drop threshold (1%) / 训练损失相对下降率阈值（1%） |
 
-The first condition requires that the composite fitness score has not meaningfully exceeded its historical best within the patience window. The second condition requires that the training loss itself has stopped decreasing at a meaningful rate. Only when both the validation-oriented metric (fitness) and the training-oriented metric (loss) confirm stagnation does the plateau detector fire.
+The first condition requires that the composite fitness score (based on mAP50 and mAP50-95, not confidence-threshold-dependent Precision/Recall) has not meaningfully exceeded its historical best within the patience window. The second condition requires that the training loss itself has stopped decreasing at a meaningful rate. Only when both the validation-oriented metric (fitness) and the training-oriented metric (loss) confirm stagnation does the plateau detector fire.
 
-第一个条件要求在耐心窗口内综合适应度分数未显著超越历史最优。第二个条件要求训练损失本身已停止以有意义的速率下降。只有当面向验证集的指标（适应度）和面向训练集的指标（损失）同时确认停滞时，平台期检测器才会触发。
+第一个条件要求在耐心窗口内综合适应度分数（基于 mAP50 和 mAP50-95，而非依赖置信度阈值的精确率/召回率）未显著超越历史最优。第二个条件要求训练损失本身已停止以有意义的速率下降。只有当面向验证集的指标（适应度）和面向训练集的指标（损失）同时确认停滞时，平台期检测器才会触发。
 
 #### 7.6.3 Callback Integration / 回调集成
 
